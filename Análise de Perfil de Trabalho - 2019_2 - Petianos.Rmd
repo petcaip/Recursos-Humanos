@@ -1,0 +1,450 @@
+---
+title: "Análise de Perfil de Trabalho"
+author: "Comitê de Avaliação de Projetos."
+date: "12/08/2019"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+-------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+# **Introdução**
+
+<p style="text-align: justify;">Com o intuito que criar ações específicas para cada petiano, respeitando suas
+características, o Comitê de Análise de Projetos (C.A.P.) resolveu analisar
+os dados dos petianos atuais do PET Engenharia Química UFC por meio do teste disponibilizado
+pela Fundação Estudar: [Teste de Estilos de Trabalho](https://www.napratica.org.br/e/standalone/meu_perfil/). Esse teste nos informa a
+pontuação de cada petiano em 8 características, sendo elas:</p>
+
+**Agilidade**:
+*Preferência por ambientes que buscam ação e velocidade, onde a calma é menos valorizada.*
+
+**Agressividade**:
+*Preferência por um ambiente que valorize a competição e foco.*
+
+**Atenção aos Detalhes**:
+*Preferência por ambientes analíticos, onde se preste atenção em tudo que está acontecendo e onde a qualidade seja valorizada.*
+
+**Ênfase em Recompensa**:
+*Preferência por ambientes onde existem muitas oportunidades de crescimento e de ganho para quem está disposto a fazer o que é preciso para obtê-los.*
+
+**Estabilidade**:
+*Preferência por ambientes organizados e onde as coisas são bem definidas.*
+
+**Informalidade**:
+*Preferência por ambientes informais e livres, com poucas regras.*
+
+**Orientação para Resultados**:
+*Preferência por ambientes voltados para execução, onde o que importa é o que foi feito e onde fazer as coisas de forma diferente é menos valorizado.*
+
+**Trabalho em Equipe**:
+*Preferência por ambientes onde as decisões e responsabilidades são compartilhadas e cujo foco seja menos no individual e mais na equipe.*
+
+<br/>
+
+### **Sumário**
+
+1. <a href="#Procedimentos">Procedimentos</a>: Análises que foram feitas e como foram feitas.
+2. <a href="#Preparação">Preparação</a>: Ajustes iniciais na planilha.
+3. <a href="#Análises">Análises</a>: Análises introdutórias.
+    + <a href="#K-Means">K-Means</a>: Definição do número de clusters, aplicação e interpretação.
+    + <a href="#Análise de Componentes Principais">Análise de Componentes Principais</a>: Aplicação e interpretação da ACP.
+    + <a href="#PERMANOVA">PERMANOVA</a>: Explicação, aplicação e interpretação.
+
+<br/>
+<a name="Procedimentos" id="Procedimentos"></a>
+
+## **Procedimentos**
+
+<p style="text-align: justify;"> Para encontrarmos os grupos formados com base no perfil de trabalho, aplicamos uma **Análise de Clusterização (K-Means)**. Contudo, essa análise possui um problema por não encontrar o número de clusters, apenas acha as pessoas que formam os cluster com base no número de clusters pré-estabelecidos. Para encontrarmos o número ótimo de clusters, podemos realizar um Método da Silhueta Média. Após isso, conseguimos encontrar, com os grupos já formados, quais características mais estão relacionadas com cada grupo.</p>
+<p style="text-align: justify;"> Contudo, precisamos saber quais variáveis estão correlacionadas pois esse efeito pode interferir na análise dos resultados. Podemos pensar da seguinte forma: se duas variáveis estão muito correlacionadas, ao incluirmos ela, estamos "dupiclando" sua informação.</p>
+<p style="text-align: justify;"> Contudo, precisamos saber quais variáveis estão correlacionadas pois esse efeito pode interferir na análise dos resultados. Podemos pensar da seguinte forma: se duas variáveis estão muito correlacionadas, ao incluirmos ela, estamos "dupiclando" sua informação.</p>
+<p style="text-align: justify;"> Após isso, podemos realizar uma **Análise de Componentes Principais (ACP)** para verificar quais características de perfil de trabalho estão mais relacionadas a cada grupo. Por último, foi comparado o grupo de homens e mulheres, assim como os grupos formado pelos anos de curso de cada integrante do PET. As validações de possíveis afirmações foram testada por meio da PERMANOVA.</p>
+
+<br/>
+
+<a name="Preparação" id="Preparação"></a>
+
+## **Preparação**
+
+```{r warning=FALSE}
+library(ggplot2)
+library(gridExtra)
+library(DT)
+library(vegan)
+library(mvnormtest)
+library(MVN)
+library(mvoutlier)
+library(factoextra)
+```
+
+<p style="text-align: justify;">Inicialmente, visualizando a tabela</p>
+
+```{r}
+pet <- read.table('_txt/petianos.txt', h = T, sep= '\t')
+pet <- pet[1:15,];datatable(pet)
+```
+
+<p style="text-align: justify;">Podemos observar que a primeira coluna são os nomes das linhas. Podemos armazenar a primeira coluna da tabela (que são os nomes) e atribuílas para os nomes das linhas da tabela.</p>
+
+```{r}
+row.names(pet) # nomes iniciais das linhas
+```
+
+```{r}
+info <- pet[,1];info # atribuindo para o objeto 'info' os nomes dos petianos
+```
+
+```{r}
+row.names(pet) <- info
+row.names(pet)
+```
+
+<p style="text-align: justify;">Temos agora duas colunas com os nomes, mas a primeira coluna da planilha ainda continua sendo os nomes dos petianos. Como já atribuimos os nomes das linhas, podemos eliminar a primeira coluna</p>
+
+```{r}
+pet <- pet[,-1];datatable(pet)
+```
+
+<br/>
+
+<a name="Análises" id="Análises"></a>
+
+## **Análises**
+
+<p style="text-align: justify;">Analisaremos um pouco os dados obtidos:</p>
+
+<p style="text-align: justify;">Tentaremos analisar algumas informações através de gráficos de densidade e Box Plot, utilizando a função `geom_density` e a função `geom_boxplot`, respectivamente, do pacote **ggplot2**.</p>
+
+```{r fig.height=5, fig.width=10}
+
+plot_density <- function(data, coluna, string) {
+  ggplot(data = data) +
+    geom_density(aes(coluna), fill = '#F0F8FF', alpha = 0.5) +
+    ggtitle(paste("Densidade", string, sep=" ")) +
+    ylab('Densidade') +
+    xlab(string) +
+    ylim(c(0,0.4)) +
+    xlim(c(0,10)) +
+    geom_vline(xintercept = c(min(coluna), max(coluna)), alpha = 0.5) +
+    theme_bw()
+}
+
+graf_agi <- plot_density(pet, pet$Agilidade, 'Agilidade')
+graf_agress <- plot_density(pet, pet$Agressividade, 'Agressividade')
+graf_det <- plot_density(pet, pet$Detalhes, 'Detalhes')
+graf_recomp <- plot_density(pet, pet$Recompensa, 'Recompensa')
+graf_est<- plot_density(pet, pet$Estabilidade, 'Estabilidade')
+graf_infor <- plot_density(pet, pet$Informalidade, 'Informalidade')
+graf_res <- plot_density(pet, pet$Resultado, 'Resultado')
+graf_eq <- plot_density(pet, pet$Equipe, 'Equipe')
+
+grid.arrange(graf_agi, graf_agress, graf_det, graf_recomp, graf_est,
+             graf_infor, graf_res, graf_eq, ncol = 4, nrow = 2)
+
+
+```
+
+<p style="text-align: justify;"><font color = #008B8B>*OBS: É interessante ressaltar que não precisamos padronizar, ainda, os dados para o gráfico de densidade, pois ele leva em conta apenas a frequência. Caso padronizássemos e plotassemos os gráficos de densidade, teríamos o mesmo resultado.*</font></p>
+
+```{r  fig.height=5, fig.width=12}
+
+tema <- theme(plot.title = element_text(hjust = 0.5),
+              panel.background = element_rect(fill = "white", colour = "grey50"),
+              panel.border = element_rect(linetype = 'solid' , fill = NA))
+
+plot_boxplot <- function(data, coluna, string){
+  ggplot(data = data) +
+    geom_boxplot(aes(y = coluna)) +
+    ylab('Individuais') +
+    ylim(0,10) +
+    ggtitle(string) +
+    tema
+}
+
+c1 <- plot_boxplot(pet, pet$Agressividade, 'Agressividade')
+c2 <- plot_boxplot(pet, pet$Informalidade, 'Informalidade')
+c3 <- plot_boxplot(pet, pet$Agilidade, 'Agilidade')
+c4 <- plot_boxplot(pet, pet$Detalhes, 'Detalhes')
+c5 <- plot_boxplot(pet, pet$Recompensa, 'Recompensa')
+c6 <- plot_boxplot(pet, pet$Equipe, 'Equipe')
+c7 <- plot_boxplot(pet, pet$Estabilidade, 'Estabilidade')
+c8 <- plot_boxplot(pet, pet$Resultado, 'Resultado')
+
+grid.arrange(c1,c2,c3,c4,c5,c6,c7,c8,
+             nrow = 1, ncol = 8)
+
+```
+
+<p style="text-align: justify;"><font color = #CD5C5C>**RH** - Concluimos que:
+
+1. Conseguimos observar que **Atenção aos Detalhes** é a característica que apresenta maiores valores no grupo.
+
+2. **Trabalho em Equipe** é a característica que possui maior variação no grupo. Em contrapartida, **Orientação para Resultados** é a que possui menos variação.
+
+3. Aparentemente, temos dois "grupos" de caracterísiticas: (Agressividade, Informalidade) e (Agilidade, Detalhes, Recompensa, Equipe, Estabilidade, Resultado).
+
+4. **Agressividade**, **Informalidade** e **Agilidade** possuem um outlier cada.
+
+</font></p>
+
+<a name="K-Means" id="K-Means"></a>
+
+### **K-Means**
+
+<p  style="text-align: justify;">No R, é extremamente simples realizar uma K-Means. O comando é `kmeans`. Contudo, antes, precisamos determinar o melhor número de clusters. Para isso há diversos métodos.</p>
+
+<p  style="text-align: justify;">Um deles é o **Método de Elbow**. O código já está presente na biblioteca `factoextra`, por meio da função `fviz_nbclust`.</p>
+
+```{r}
+fviz_nbclust(pet, kmeans, method = "wss")
+```
+
+<p  style="text-align: justify;">Contudo, esse método se mostra complicado de predizir um número de clusters. Para isso podemos utilizar outro método.</p>
+
+<br/>
+
+<p  style="text-align: justify;">Outra forma, é através da **Average Silhouette Method**, ou Método da Silhueta Média (tradução livre). A abordagem de silhueta média mede a qualidade de um agrupamento. Isto é, determina o quão bem cada objeto está dentro de seu cluster. Uma largura média alta da silhueta indica um bom agrupamento. O método de silhueta média calcula a silhueta média das observações para diferentes valores de k. O número ideal de clusters k é aquele que maximiza a silhueta média em uma faixa de valores. Também já está implementado na função `fviz_nbclust`, devemos apenas mudar o método.</p>
+
+
+```{r}
+fviz_nbclust(pet, kmeans, method = "silhouette")
+```
+<p  style="text-align: justify;">O gráfico nos mostra que devemos escolher quatro clusters. Podemos fazer isso utilizando a função `kmeans` e plotamos com a função `fviz_nbclust`.</p>
+
+```{r fig.height=6, fig.width=12}
+km_pet <- kmeans(pet,4,iter.max=100000);km_pet
+fviz_cluster(km_pet, data = pet)
+```
+
+<p  style="text-align: justify;">O gráfico acima nos mostra o padrão geral do grupo atual de petianos. Entretanto, podemos nos questionar quais características esses grupos possuem. Isso será visto posteriormente com a PCA.</p>
+
+<br/>
+
+<p style="text-align: justify;"><font color = #CD5C5C>**RH** - Concluimos que:
+
+* (Mirela, Lucas B. e Sarah), (Larissa, Vitória e Matheus), (Gerson, Gabriela Ba. e Gabriela Br.) e (Fabrício, Mariana, Lucas A., Vitor e Caio) formam, de fato, clusters.
+* Há um grupo com grande variação: Fabrício, Mariana, Lucas A., Vitor e Caio
+</font></p>
+
+<br/>
+
+<p  style="text-align: justify;">Devemos analisar agoras as correlações entre as variáveis. Utilizamos o Coeficiente de Correlação de Pearson, indicado para variáveis quantitativas e, preferencialmente, contínuas.</p>
+
+```{r}
+cor(pet[,-9], method = 'pearson')
+```
+
+<p  style="text-align: justify;">Com exceção da comparação de um variável com a mesma variável, não temos um valor relativamente alto para podermos considerar que há correlação. Assim, optamos por continuar com todas as variáveis.</p>
+
+
+<a name="Análise de Componentes Principais" id="Análise de Componentes Principais"></a>
+
+### **Análise de Componentes Principais (ACP)**
+
+<p  style="text-align: justify;">Agora, veremos as características que esses grupos possuem. Para isso, plotaremos uma PCA e veremos os loads que mais se aproximam dos clusters.</p>
+<p  style="text-align: justify;">Contudo, para delimitarmos visualmente na PCA os grupos, criaremos uma coluna extra na tabela pet, contendo a que grupo cada pessoa pertence. Em seguida, poderemos utilizar o comando `ordihull` para delimitarmos os grupos.</p>
+
+```{r}
+km_pet$cluster
+
+pet$Grupo <- factor(c(4,4,2,2,2,1,4,3,4,1,3,3,2,4,1))
+datatable(pet)
+```
+
+```{r}
+dim(pet)
+pca <- prcomp(pet[,-9])
+summary(pca)
+
+pca_scores <- pca$x
+loads <- t(cor(pca_scores, pet[,-9]))
+```
+
+
+```{r fig.height=4, fig.width=13}
+
+par(mfrow = c(1,3))
+
+plot(pca_scores[,1:2], xlim = c(-4,4), ylim = c(-4,4),
+     xlab = 'PC1 (31.52%)', ylab = 'PC2 (19.49%)',
+     main = 'PCA - Perfil de Trabalho dos Petianos')
+abline(v=0,h=0,lty=2)
+arrows(0,0,loads[,1]*3,loads[,2]*3)
+text(loads[,1:2]*3.6,rownames(loads))
+ordihull(pca$x[,c(1,2)], pet$Grupo, draw = 'polygon', show.groups = '1', alpha = 0.3, col = 3)
+ordihull(pca$x[,c(1,2)], pet$Grupo, draw = 'polygon', show.groups = '2', alpha = 0.3, col = 4)
+ordihull(pca$x[,c(1,2)], pet$Grupo, draw = 'polygon', show.groups = '3', alpha = 0.3, col = 5)
+ordihull(pca$x[,c(1,2)], pet$Grupo, draw = 'polygon', show.groups = '4', alpha = 0.3, col = 6)
+legend('bottomright', fill = c(3:6), legend = c('Grupo 1', 'Grupo 2', 'Grupo 3', 'Grupo 4'))
+
+
+plot(pca_scores[,2:3], xlim = c(-4,4), ylim = c(-4,4),
+     xlab = 'PC2 (19.49%)', ylab = 'PC3 (18.57%)',
+     main = 'PCA - Perfil de Trabalho dos Petianos')
+abline(v=0,h=0,lty=2)
+arrows(0,0,loads[,2]*3,loads[,3]*3)
+text(loads[,2:3]*3.6,rownames(loads))
+ordihull(pca$x[,c(2,3)], pet$Grupo, draw = 'polygon', show.groups = '1', alpha = 0.3, col = 3)
+ordihull(pca$x[,c(2,3)], pet$Grupo, draw = 'polygon', show.groups = '2', alpha = 0.3, col = 4)
+ordihull(pca$x[,c(2,3)], pet$Grupo, draw = 'polygon', show.groups = '3', alpha = 0.3, col = 5)
+ordihull(pca$x[,c(2,3)], pet$Grupo, draw = 'polygon', show.groups = '4', alpha = 0.3, col = 6)
+legend('bottomright', fill = c(3:6), legend = c('Grupo 1', 'Grupo 2', 'Grupo 3', 'Grupo 4'))
+
+
+plot(pca_scores[,1],pca_scores[,3], xlim = c(-4,4), ylim = c(-4,4),
+     xlab = 'PC1 (31.52%)', ylab = 'PC3 (18.57%)',
+     main = 'PCA - Perfil de Trabalho dos Petianos')
+abline(v=0,h=0,lty=2)
+arrows(0,0,loads[,1]*3,loads[,3]*3)
+text(loads[,1]*3.6,loads[,3]*3.6,rownames(loads))
+ordihull(pca$x[,c(1,3)], pet$Grupo, draw = 'polygon', show.groups = '1', alpha = 0.3, col = 3)
+ordihull(pca$x[,c(1,3)], pet$Grupo, draw = 'polygon', show.groups = '2', alpha = 0.3, col = 4)
+ordihull(pca$x[,c(1,3)], pet$Grupo, draw = 'polygon', show.groups = '3', alpha = 0.3, col = 5)
+ordihull(pca$x[,c(1,3)], pet$Grupo, draw = 'polygon', show.groups = '4', alpha = 0.3, col = 6)
+legend('bottomright', fill = c(3:6), legend = c('Grupo 1', 'Grupo 2', 'Grupo 3', 'Grupo 4'))
+
+
+```
+
+<p  style="text-align: justify;">Seria útil, também, analisarmos os grupos pelo sexo, e observar se há maior discrepância em alguns deles. Para isso, criaremos uma nova coluna na planilha pet2, com o sexo de cada petiano.</p>
+
+```{r fig.height=4, fig.width=13}
+par(mfrow = c(1,3))
+
+pet$Sexo <- factor(c('H', 'H', 'M', 'M', 'H', 'M',
+                     'H', 'H', 'M', 'H', 'M', 'M',
+                     'H', 'H', 'M'))
+
+plot(pca_scores[,1:2], xlim = c(-4,4), ylim = c(-4,4),
+     xlab = 'PC1 (31.52%)', ylab = 'PC2 (19.49%)',
+     main = 'PCA - Perfil de Trabalho dos Petianos')
+abline(v=0,h=0,lty=2)
+arrows(0,0,loads[,1]*3,loads[,2]*3)
+text(loads[,1:2]*3.6,rownames(loads))
+ordihull(pca$x[,1:2], pet$Sexo, draw = 'polygon', show.groups = 'H', alpha = 0.2, col = 6)
+ordihull(pca$x[,1:2], pet$Sexo, draw = 'polygon', show.groups = 'M', alpha = 0.2, col = 7)
+legend('topright', fill = c(6:7), legend = c('Homem', 'Mulher'))
+
+
+plot(pca_scores[,2:3], xlim = c(-4,4), ylim = c(-4,4),
+     xlab = 'PC1 (19.49%)', ylab = 'PC3 (18.57%)',
+     main = 'PCA - Perfil de Trabalho dos Petianos')
+abline(v=0,h=0,lty=2)
+arrows(0,0,loads[,2]*3,loads[,3]*3)
+text(loads[,1:2]*3.6,rownames(loads))
+ordihull(pca$x[,2:3], pet$Sexo, draw = 'polygon', show.groups = 'H', alpha = 0.2, col = 6)
+ordihull(pca$x[,2:3], pet$Sexo, draw = 'polygon', show.groups = 'M', alpha = 0.2, col = 7)
+legend('topright', fill = c(6:7), legend = c('Homem', 'Mulher'))
+
+
+plot(pca_scores[,c(1,3)], xlim = c(-4,4), ylim = c(-4,4),
+     xlab = 'PC1 (31.52%)', ylab = 'PC3 (18.57%)',
+     main = 'PCA - Perfil de Trabalho dos Petianos')
+abline(v=0,h=0,lty=2)
+arrows(0,0,loads[,1]*3,loads[,3]*3)
+text(loads[,c(1,3)]*3.6,rownames(loads))
+ordihull(pca$x[,c(1,3)], pet$Sexo, draw = 'polygon', show.groups = 'H', alpha = 0.2, col = 6)
+ordihull(pca$x[,c(1,3)], pet$Sexo, draw = 'polygon', show.groups = 'M', alpha = 0.2, col = 7)
+legend('topright', fill = c(6:7), legend = c('Homem', 'Mulher'))
+
+```
+
+<p  style="text-align: justify;">Aparentemente, os grupo Homem e Mulher não diferem com base no perfil de trabalho.</p>
+
+
+<p  style="text-align: justify;">Podemos ver, também, quanto ao ano de cada petiano.</p>
+
+```{r fig.height=4, fig.width=13}
+pet$Ano <- factor(c(2,3,1,2,1,2,3,2,1,3,3,1,3,3,1))
+
+par(mfrow = c(1,3))
+
+plot(pca_scores[,1:2], xlim = c(-4,4), ylim = c(-4,4),
+     xlab = 'PC1 (31.52%)', ylab = 'PC2 (19.49%)',
+     main = 'PCA - Perfil de Trabalho dos Petianos / Por Ano')
+abline(v=0,h=0,lty=2)
+arrows(0,0,loads[,1]*3,loads[,2]*3)
+text(loads[,1:2]*3.6,rownames(loads))
+ordihull(pca$x[,1:2], pet$Ano, draw = 'polygon', show.groups = '1', alpha = 0.25, col = 9)
+ordihull(pca$x[,1:2], pet$Ano, draw = 'polygon', show.groups = '2', alpha = 0.2, col = 10)
+ordihull(pca$x[,1:2], pet$Ano, draw = 'polygon', show.groups = '3', alpha = 0.2, col = 11)
+legend('topright', fill = c(9:11), legend = c('1º Ano','2º Ano', '3º Ano'))
+
+
+plot(pca_scores[,2:3], xlim = c(-4,4), ylim = c(-4,4),
+     xlab = 'PC2 (19.49%)', ylab = 'PC3 (18.57%)',
+     main = 'PCA - Perfil de Trabalho dos Petianos / Por Ano')
+abline(v=0,h=0,lty=2)
+arrows(0,0,loads[,2]*3,loads[,3]*3)
+text(loads[,2:3]*3.6,rownames(loads))
+ordihull(pca$x[,2:3], pet$Ano, draw = 'polygon', show.groups = '1', alpha = 0.25, col = 9)
+ordihull(pca$x[,2:3], pet$Ano, draw = 'polygon', show.groups = '2', alpha = 0.2, col = 10)
+ordihull(pca$x[,2:3], pet$Ano, draw = 'polygon', show.groups = '3', alpha = 0.2, col = 11)
+legend('topright', fill = c(9:11), legend = c('1º Ano','2º Ano', '3º Ano'))
+
+
+plot(pca_scores[,c(1,3)], xlim = c(-4,4), ylim = c(-4,4),
+     xlab = 'PC1 (31.52%)', ylab = 'PC3 (18.57%)',
+     main = 'PCA - Perfil de Trabalho dos Petianos / Por Ano')
+abline(v=0,h=0,lty=2)
+arrows(0,0,loads[,1]*3,loads[,3]*3)
+text(loads[,c(1,3)]*3.6,rownames(loads))
+ordihull(pca$x[,c(1,3)], pet$Ano, draw = 'polygon', show.groups = '1', alpha = 0.25, col = 9)
+ordihull(pca$x[,c(1,3)], pet$Ano, draw = 'polygon', show.groups = '2', alpha = 0.2, col = 10)
+ordihull(pca$x[,c(1,3)], pet$Ano, draw = 'polygon', show.groups = '3', alpha = 0.2, col = 11)
+legend('topright', fill = c(9:11), legend = c('1º Ano','2º Ano', '3º Ano'))
+
+```
+
+<p style="text-align: justify;"><font color = #CD5C5C>**RH** - Concluimos que:
+
+* O grupo do 3º Ano, no PC1, apresenta maiores valores de Equipe, Informalidade e Estabilidade. No PC2, a maioria dos membros, apresenta maiores valores em Detalhes e Agressividade enquanto o restante apresenta valores altos de Recompensa e Resultado. Por último, no PC3, alguns pontos com valores altos em Agressividade e Estabilidade enquanto um ponto com altos valores em Detalhes, Agilidade e Equipe.
+
+* O grupo do 2º Ano, no PC1, metade dos membros apresenta altos valores de Recompensa, Agilidade, Detalhes e Agressividade, enquanto a outra metade apresenta altos valores de Equipe, Informaldiade e Estabilidade. No PC2, a maioria dos membros apresenta altos valores em Resultado e Recompensa.Já no PC3, um ponto com alto valor em Estabilidade enquanto a maioria com valores altos em Agilidade, Equipe e Detalhes.
+
+* O grupo do 1º Ano, no PC1, a maioria apresenta altos valores de Agilidade, Recompensa, Detalhes e Agressividade; a outra parte desse grupo se assemelha ao 3º Ano e apresentam maiores valores de Equipe, Informaliadade e Estabilidade. No PC2, apresentam todos apresentam valores muito baixos quando comparado aos outros grupos. No PC3, percebemos dois pontos que puxam para maiores valores de Agilidade e Equipe.
+
+</font></p>
+
+<p  style="text-align: justify;">Para podermos afirmar se os grupos diferem ou não, de fato, podemos realizar uma outra análise: PERMANOVA.</p>
+
+<br/>
+
+<a name="PERMANOVA" id="PERMANOVA"></a>
+
+### **PERMANOVA**
+
+<p  style="text-align: justify;">PERMANOVA é uma ANOVA multivariada permutacional. Uma PERMANOVA permite determinar estatisticamente se os centros (centroides) do grupo de amostras para um grupo difere do centro das amostras de outro grupo. Assim como uma ANOVA, podemos dizer se o valor médio difere entre os grupos de tratamento, de modo que a PERMANOVA permite determinar se os centróides diferem nas ordenações. Em outras palavras, a PERMANOVA lhe diz as chances de observar a ordenação que você observou, ou uma com menos sobreposição, não havendo diferença entre um grupo e outro.</p>
+
+<p style="text-align: justify;"><font color = #008B8B>*OBS: Alguns pressupostos da análise não foram expostos nesse trabalho.*</font></p>
+
+<p  style="text-align: justify;">Primeiro, precisamos calcular os índices de dissimilaridade com a função `vegdist` (pacote **vegan**), passando a distância adequado para os dados. Como temos variáveis contínuas e não há presença de zeros, optamos pela distância euclidiana.</p>
+
+```{r}
+dist <- vegdist(pet[,-c(9:12)], method='euc');dist
+
+```
+
+<p  style="text-align: justify;">Com a matriz de distâncias, podemos realizar a PERMANOVA - função `adonis2` (novamente, pacote **vegan**).</p>
+
+```{r}
+permanova <- adonis2(dist~pet$Sexo, data=pet, permutations = 1000000, method="euc");permanova
+```
+
+```{r}
+permanova2 <- adonis2(dist~pet$Ano, data=pet, permutations = 1000000, method="euc");permanova2
+```
+
+<p  style="text-align: justify;">O objeto nos da muitas informações. Temos que **p > 0.05** para ambos o casos, o que nos indica que devemos aceitar a hipótese nula: os grupos não diferem. Isto é, **homens e mulheres do PET Engenharia Química UFC não diferem em suas características** e/ou **não há diferença entre petianos de diferentes anos**. Além disso, o objeto nos informa o R2 (correlação). Casso R2 fosse 1, teríamos a formação de grupos perfeitos. Esse resultado nos diz, então, que há grupos bastantes **heterogêneos**, o que resulta em um R2 baixo.</p>
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------------
+
+<br/><br/>
+
+</body>
